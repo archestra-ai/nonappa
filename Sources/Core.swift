@@ -33,6 +33,11 @@ struct SleepStatus {
                 return
             }
         }
+        // pmset omits SleepDisabled until disablesleep has been set, so the default is off.
+        if output.contains("System-wide power settings:") {
+            disabled = false
+            return
+        }
         throw AppError.message("Couldn’t read the Mac’s sleep setting. Try Refresh status.")
     }
 }
