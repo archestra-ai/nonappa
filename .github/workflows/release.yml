@@ -14,14 +14,15 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release-please:
+    name: Prepare release and version PR
     # Enable after the signing secrets and releaser app access are configured.
     if: ${{ vars.NONAPPA_RELEASES_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: write # Create release tags, draft metadata, and release assets.
+      issues: write # Apply Release Please lifecycle labels.
+      pull-requests: write # Open and update the release version PR.
     outputs:
       publish: ${{ steps.resolve.outputs.publish }}
       version: ${{ steps.resolve.outputs.version }}
@@ -82,12 +83,13 @@ jobs:
           manifest-file: .github/release-please/.release-please-manifest.json
           skip-github-release: true
   publish:
+    name: Build and publish signed macOS app
     needs: release-please
     if: ${{ needs.release-please.outputs.publish == 'true' }}
     runs-on: macos-15
     timeout-minutes: 40
     permissions:
-      contents: write
+      contents: write # Create release tags, draft metadata, and release assets.
     env:
       VERSION: ${{ needs.release-please.outputs.version }}
       TAG: ${{ needs.release-please.outputs.tag }}

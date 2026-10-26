@@ -3,10 +3,14 @@ on:
   pull_request:
   push:
     branches: [main]
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
-  contents: read
+  contents: read # Check out source code for isolated build and packaging tests.
 jobs:
   test:
+    name: macOS tests and universal packaging
     runs-on: macos-15
     timeout-minutes: 20
     steps:
