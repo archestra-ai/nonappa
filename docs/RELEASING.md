@@ -4,7 +4,7 @@ One release workflow, no update server: Release Please maintains a version/chang
 
 ## One-time setup
 
-Publishing is disabled until repository variable `NONAPPA_RELEASES_ENABLED` is `true`. Do the following before enabling it:
+Publishing is disabled until repository variable `NONAPPA_RELEASES_ENABLED` is `true`. Create a GitHub environment named `release`, restricted to the main branch, for the signing secrets below. Do the following before enabling it:
 
 1. Allow **this repository** to use the existing `ARCHESTRA_RELEASER_GITHUB_APP_ID` and `ARCHESTRA_RELEASER_GITHUB_APP_PRIVATE_KEY` organization secrets, and ensure the app installation includes NoNappa. Its token creates release PRs that trigger normal checks. `GITHUB_TOKEN` alone does not trigger those PR workflows.
 2. Use an existing **Developer ID Application** certificate with its private key, exported as a password-protected P12. Set secret `NONAPPA_DEVELOPER_ID_P12` to its base64 encoding and `NONAPPA_DEVELOPER_ID_PASSWORD` to its export password. Set variable `NONAPPA_CODE_SIGN_IDENTITY` to the full identity name. This workflow does not create certificates or change provisioning.
@@ -14,7 +14,7 @@ Publishing is disabled until repository variable `NONAPPA_RELEASES_ENABLED` is `
    ```sh
    mkdir -p .secrets
    swift scripts/update-key.swift generate .secrets/sparkle-private .secrets/sparkle-public
-   gh secret set SPARKLE_PRIVATE_ED_KEY < .secrets/sparkle-private
+   gh secret set --env release SPARKLE_PRIVATE_ED_KEY < .secrets/sparkle-private
    gh variable set SPARKLE_PUBLIC_ED_KEY < .secrets/sparkle-public
    ```
 

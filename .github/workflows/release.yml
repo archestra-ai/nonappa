@@ -15,6 +15,7 @@ concurrency:
 jobs:
   release-please:
     name: Prepare release and version PR
+    environment: release
     # Enable after the signing secrets and releaser app access are configured.
     if: ${{ vars.NONAPPA_RELEASES_ENABLED == 'true' }}
     runs-on: ubuntu-latest
@@ -84,6 +85,7 @@ jobs:
           skip-github-release: true
   publish:
     name: Build and publish signed macOS app
+    environment: release
     needs: release-please
     if: ${{ needs.release-please.outputs.publish == 'true' }}
     runs-on: macos-15
