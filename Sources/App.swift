@@ -94,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 approve.target = self
             }
             menu.addItem(.separator())
+            let update = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "")
+            update.target = self
+            update.isEnabled = model.updates.canCheck
+            menu.autoenablesItems = false
+            menu.addItem(.separator())
             let quit = menu.addItem(withTitle: "Quit NoNappa", action: #selector(quit), keyEquivalent: "q")
             quit.target = self
             quit.isEnabled = !model.busy
@@ -105,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown { popover.performClose(nil) } else { showPopover() }
     }
 
+    @objc private func checkUpdates() { model.updates.check() }
     @objc private func toggleLogin() { model.setLogin(!model.loginEnabled) }
     @objc private func approveLogin() { if !model.isPreview { SMAppService.openSystemSettingsLoginItems() } }
     @objc private func quit() { model.quit() }
@@ -170,12 +176,14 @@ final class SleepModel: ObservableObject {
         didSet { preferences.minutes = minutes }
     }
     let isPreview: Bool
+    let updates: UpdateController
     private let backend: SleepBackend
     private let preferences: Preferences
     private var statusReadError: String?
 
     init(previewState: String? = nil, preferences: Preferences? = nil, backend: SleepBackend? = nil) {
         isPreview = previewState != nil
+        updates = UpdateController(enabled: previewState == nil)
         self.backend = backend ?? previewState.map { PreviewSleepBackend(state: $0).backend } ?? .live
         self.preferences = preferences ?? (previewState == nil ? Preferences() : Preferences(defaults: UserDefaults(suiteName: "nonappa-ui-preview")!))
         minutes = self.preferences.minutes
@@ -343,6 +351,7 @@ struct Panel: View {
                             }
                         }
                     }
+                    UpdateMenu(updates: model.updates)
                     Divider()
                     Button("Quit NoNappa") { model.quit() }.keyboardShortcut("q")
                 } label: {
@@ -441,5 +450,18 @@ enum Mascot {
         }
         image.isTemplate = true
         return image
+    }
+}
+
+struct UpdateMenu: View {
+    @ObservedObject var updates: UpdateController
+    var body: some View {
+        Divider()
+        Button("Check for Updates…") { updates.check() }.disabled(!updates.canCheck)
+        if updates.configured {
+            Toggle("Check Automatically", isOn: Binding(get: { updates.automaticallyChecks }, set: { updates.setAutomaticChecks($0) }))
+            Toggle("Install Updates Automatically", isOn: Binding(get: { updates.automaticallyInstalls }, set: { updates.setAutomaticInstalls($0) }))
+                .disabled(!updates.allowsAutomaticInstall)
+        }
     }
 }

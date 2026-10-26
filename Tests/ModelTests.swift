@@ -9,6 +9,7 @@ struct ModelTests {
         let preferences = Preferences(defaults: defaults)
         let fixture = PreviewSleepBackend(state: "normal")
         let model = SleepModel(previewState: "normal", preferences: preferences, backend: fixture.backend)
+        precondition(!model.updates.configured && !model.updates.canCheck)
         await model.readStatus()
         precondition(model.disabled == false && model.deadline == nil)
         model.minutes = 30

@@ -1,0 +1,156 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Retry an existing draft release (version without v)
+        required: false
+        type: string
+permissions: {}
+concurrency:
+  group: release-nonappa
+  cancel-in-progress: false
+jobs:
+  release-please:
+    # Enable after the signing secrets and releaser app access are configured.
+    if: ${{ vars.NONAPPA_RELEASES_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      publish: ${{ steps.resolve.outputs.publish }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ secrets.ARCHESTRA_RELEASER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ARCHESTRA_RELEASER_GITHUB_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: ${{ !inputs.version }}
+        id: release
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: .github/release-please/release-please-config.json
+          manifest-file: .github/release-please/.release-please-manifest.json
+          skip-github-pull-request: true
+      - name: Resolve draft and immutable source
+        id: resolve
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          CREATED: ${{ steps.release.outputs.release_created }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RETRY_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [[ -z "$RETRY_VERSION" && "$CREATED" != true ]]; then
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=${RETRY_VERSION:-$RELEASE_VERSION}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          tag=v$version
+          [[ $(gh release view "$tag" --json isDraft --jq .isDraft) == true ]] || exit 1
+          # Draft releases do not create tags until publication. Anchor new drafts now.
+          if [[ -z "$RETRY_VERSION" ]]; then
+            existing=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" | jq -r --arg ref "refs/tags/$tag" '.[] | select(.ref == $ref) | .object.sha')
+            if [[ -z "$existing" ]]; then
+              gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA"
+            else
+              [[ "$existing" == "$GITHUB_SHA" ]] || exit 1
+            fi
+          fi
+          sha=$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          printf 'publish=true\nversion=%s\ntag=%s\nsha=%s\n' "$version" "$tag" "$sha" >> "$GITHUB_OUTPUT"
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: ${{ !inputs.version }}
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: .github/release-please/release-please-config.json
+          manifest-file: .github/release-please/.release-please-manifest.json
+          skip-github-release: true
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.publish == 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+      TAG: ${{ needs.release-please.outputs.tag }}
+      CODE_SIGN_IDENTITY: ${{ vars.NONAPPA_CODE_SIGN_IDENTITY }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+      - name: Configure ephemeral release signing
+        env:
+          CERTIFICATE: ${{ secrets.NONAPPA_DEVELOPER_ID_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.NONAPPA_DEVELOPER_ID_PASSWORD }}
+          UPDATE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$CODE_SIGN_IDENTITY" == 'Developer ID Application:'* && -n "$SPARKLE_PUBLIC_ED_KEY" ]]
+          [[ -n "$CERTIFICATE" && -n "$UPDATE_KEY" && -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER" ]]
+          [[ $(tr -d '\r\n' < version.txt) == "$VERSION" ]]
+          umask 077
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$UPDATE_KEY" > "$RUNNER_TEMP/update-key"
+          printf '%s' "$SPARKLE_PUBLIC_ED_KEY" > "$RUNNER_TEMP/update-public-key"
+          printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          swift scripts/update-key.swift verify "$RUNNER_TEMP/update-key" "$RUNNER_TEMP/update-public-key"
+          password=$(openssl rand -hex 32)
+          security create-keychain -p "$password" "$RUNNER_TEMP/release.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/release.keychain-db"
+          security unlock-keychain -p "$password" "$RUNNER_TEMP/release.keychain-db"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/release.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$RUNNER_TEMP/release.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/release.keychain-db"
+      - name: Test and build universal app
+        run: |
+          bash test.sh
+          bash scripts/package.sh
+      - name: Notarize, staple, and sign update
+        env:
+          NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          archive="build/release/NoNappa-$VERSION-universal.zip"
+          xcrun notarytool submit "$archive" --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+          xcrun stapler staple build/NoNappa.app
+          xcrun stapler validate build/NoNappa.app
+          spctl --assess --type execute --verbose build/NoNappa.app
+          ditto -c -k --sequesterRsrc --keepParent build/NoNappa.app "$archive"
+          signature=$(build/dependencies/sparkle/bin/sign_update --ed-key-file "$RUNNER_TEMP/update-key" -p "$archive")
+          build/dependencies/sparkle/bin/sign_update --verify --ed-key-file "$RUNNER_TEMP/update-key" "$archive" "$signature"
+          python3 scripts/make-appcast.py "$archive" "$VERSION" "$signature" build/release/appcast.xml
+          shasum -a 256 "$archive" > build/release/SHA256SUMS
+      - name: Upload complete assets, then publish
+        run: |
+          gh release upload "$TAG" "build/release/NoNappa-$VERSION-universal.zip" build/release/appcast.xml build/release/SHA256SUMS --clobber
+          gh release edit "$TAG" --draft=false --latest
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/update-key" "$RUNNER_TEMP/update-public-key" "$RUNNER_TEMP/notary.p8"
