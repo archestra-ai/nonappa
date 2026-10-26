@@ -18,13 +18,28 @@ bash test.sh
 bash build.sh --install
 ```
 
-The app installs to `~/Applications/NoNappa.app`. Click its menu bar icon, choose **Enable one-click controls…**, and approve the helper installation. Then select a duration and start a session. **Restore sleep now** returns your Mac to normal sleep behavior.
+The app installs to `~/Applications/NoNappa.app`. Click its menu bar icon, choose **Set Up Sleep Controls…**, and approve the helper installation. Select a duration and choose **Keep Awake**. During a session, **Restore Sleep** is the primary action; the gear menu lets you change duration. Launch at login and Quit are in the gear menu and the menu-bar icon’s right-click menu. Launch at login is opt-in.
 
 The root-owned helper accepts only predefined sleep commands from the approved user and exact app signature over XPC. It never stores your password. Rebuilding or updating the app may require approving the helper again. Keep the Mac ventilated while running with the lid closed; support depends on macOS and hardware behavior for `pmset disablesleep`.
 
+## Safe local UI review
+
+Build without installing, then launch fixture mode:
+
+```sh
+bash build.sh
+open -n "$PWD/build/NoNappa.app" --args --preview-state normal
+```
+
+The window is titled **NoNappa — Safe UI Preview**. Controls simulate sessions in memory; this mode never installs the helper, changes sleep settings, or registers login items. Preview preferences are separate from the installed app. Supported states: `normal`, `awake`, `timed`, `error`, `setup`, and `busy`. Quit from the gear menu. To render all compact layouts and exit:
+
+```sh
+open -n "$PWD/build/NoNappa.app" --args --preview-state normal --snapshot-directory "$PWD/build/screenshots"
+```
+
 ## Tests
 
-`bash test.sh` checks saved settings, status parsing, timer restoration, failure rollback, indefinite mode, command validation, and signed helper installation. System-changing process boundaries are substituted. Actual authorization, privileged XPC, lid-close behavior, and reboot recovery require manual verification.
+`bash test.sh` checks saved settings, status parsing, timer restoration, failure rollback, indefinite mode, command validation, and signed helper installation. The UI model suite additionally checks session transitions, reopening, cancellation, read recovery, and control guards against in-memory power fixtures. System-changing process boundaries are substituted. Actual authorization, privileged XPC, lid-close behavior, and reboot recovery require manual verification.
 
 ## Uninstall
 
