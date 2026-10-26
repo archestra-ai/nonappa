@@ -9,10 +9,10 @@ VERSION=$(tr -d '\r\n' < "$ROOT/version.txt")
 IDENTITY=${CODE_SIGN_IDENTITY:--}
 ARCH=${TARGET_ARCH:-$(uname -m)}
 SIGN_ARGS=(--force --options runtime --sign "$IDENTITY")
-UPDATER_FLAGS=()
+UPDATER_FLAGS=(-Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 if [[ "$IDENTITY" != - ]]; then
   SIGN_ARGS+=(--timestamp)
-  UPDATER_FLAGS=(-F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
+  UPDATER_FLAGS+=(-F "$SPARKLE" -framework Sparkle)
 fi
 # Check the production updater API even when building an ad-hoc developer binary.
 xcrun swiftc -typecheck -parse-as-library -target "$ARCH-apple-macosx13.0" \
