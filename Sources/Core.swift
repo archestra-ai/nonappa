@@ -28,12 +28,20 @@ struct SleepStatus {
     init(output: String) throws {
         for line in output.split(separator: "\n") {
             let fields = line.split(whereSeparator: { $0.isWhitespace })
-            if fields.count == 2, fields[0] == "SleepDisabled", ["0", "1"].contains(fields[1]) {
+            if fields.first == "SleepDisabled" {
+                guard fields.count == 2, ["0", "1"].contains(fields[1]) else {
+                    throw AppError.message("Couldn’t read the Mac’s sleep setting. Try again.")
+                }
                 disabled = fields[1] == "1"
                 return
             }
         }
-        throw AppError.message("Couldn’t read the Mac’s sleep setting. Try Refresh status.")
+        // pmset omits SleepDisabled until disablesleep has been set, so the default is off.
+        if output.split(separator: "\n").contains(where: { $0.trimmingCharacters(in: .whitespaces) == "System-wide power settings:" }) {
+            disabled = false
+            return
+        }
+        throw AppError.message("Couldn’t read the Mac’s sleep setting. Try again.")
     }
 }
 

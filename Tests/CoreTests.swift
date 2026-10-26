@@ -16,7 +16,13 @@ struct CoreTests {
         precondition(preferences.minutes == 60)
         precondition(tryValue { try SleepStatus(output: "System-wide power settings:\n SleepDisabled\t\t1\n sleep 0").disabled })
         precondition(!tryValue { try SleepStatus(output: " SleepDisabled 0").disabled })
-        do { _ = try SleepStatus(output: "sleep 0"); fatalError("Unknown status must not appear asleep") } catch {}
+        precondition(!tryValue { try SleepStatus(output: "System-wide power settings:\nCurrently in use:\n sleep 0").disabled })
+        for output in ["", "sleep 0", "unrecognized System-wide power settings:",
+                       "System-wide power settings:\n SleepDisabled 2",
+                       "System-wide power settings:\n SleepDisabled",
+                       "System-wide power settings:\n SleepDisabled 1 extra"] {
+            do { _ = try SleepStatus(output: output); fatalError("Unknown status must not appear asleep") } catch {}
+        }
         do { _ = try SleepCommands.start(minutes: -1); fatalError("Invalid duration accepted") } catch {}
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nonappa-tests-\(UUID().uuidString)")
