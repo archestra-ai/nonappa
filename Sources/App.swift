@@ -320,7 +320,12 @@ struct Panel: View {
             HStack(spacing: 9) {
                 Image(nsImage: Mascot.image(size: NSSize(width: 32, height: 30)))
                     .interpolation(.none).foregroundStyle(lime).accessibilityHidden(true)
-                Text("NoNappa").font(.system(size: 20, weight: .heavy, design: .rounded))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("NoNappa").font(.system(size: 20, weight: .heavy, design: .rounded))
+                    Text("LID DOWN. GAME ON.")
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .tracking(1.3).foregroundStyle(lime)
+                }
                 Spacer()
                 Menu {
                     Toggle("Launch at Login", isOn: Binding(get: { model.loginEnabled }, set: { model.setLogin($0) }))
