@@ -6,6 +6,12 @@ import ServiceManagement
 @main
 struct NoNappaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--check-runtime") {
+            print("NoNappa runtime loaded")
+            exit(0)
+        }
+    }
     var body: some Scene { Settings { EmptyView() } }
 }
 

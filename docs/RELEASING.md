@@ -33,6 +33,6 @@ The downloaded archive is universal and uses `ditto` to preserve framework symli
 
 ## Local validation
 
-`bash test.sh` checks core/helper/model behavior. `bash scripts/test-release.sh` builds universal slices and verifies packaging, versions, actual Ed25519 signing, malformed-feed inputs, and tampered-archive rejection using disposable fixture keys. It never uploads, installs an update, prompts for helper approval, or changes the Mac’s power/login settings.
+`bash test.sh` checks core/helper/model behavior. `bash scripts/test-release.sh` type-checks the production updater, builds universal developer slices, verifies runtime launch, packaging, versions, actual Ed25519 signing, malformed-feed inputs, and tampered-archive rejection using disposable fixture keys. It never uploads, installs an update, prompts for helper approval, or changes the Mac’s power/login settings.
 
-Apple notarization, release-PR creation, publication, and a real two-version Sparkle installation need the configured credentials and a first release. They have not been validated by a local fixture run.
+Production Sparkle loading with Developer ID library validation, Apple notarization, release-PR creation, publication, and a real two-version Sparkle installation need the configured credentials and a first release. They have not been validated by a local fixture run.

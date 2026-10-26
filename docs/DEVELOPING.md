@@ -9,7 +9,7 @@ bash test.sh
 bash build.sh --install
 ```
 
-Local builds are ad-hoc signed and do not enable the updater without `SPARKLE_PUBLIC_ED_KEY`. They install to `~/Applications/NoNappa.app`. Ordinary production updates use Sparkle; local rebuilds still need `build.sh --install`.
+Local builds are ad-hoc signed with hardened runtime intact. They type-check the production updater but do not link Sparkle: macOS library validation requires a real Team ID for third-party code. Developer ID builds embed Sparkle and enable it when `SPARKLE_PUBLIC_ED_KEY` is configured. They install to `~/Applications/NoNappa.app`. Ordinary production updates use Sparkle; local rebuilds still need `build.sh --install`.
 
 The root-owned sleep helper accepts only predefined commands from the approved user and exact app signature over XPC. Updating or rebuilding the app can require approving **Set Up Sleep Controls…** again. Updates never migrate, replace, or broaden helper permissions silently. Existing timed restoration runs independently of the app.
 

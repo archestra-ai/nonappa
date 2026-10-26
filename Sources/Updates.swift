@@ -1,6 +1,8 @@
 import AppKit
 import Combine
+#if canImport(Sparkle)
 import Sparkle
+#endif
 
 @MainActor
 final class UpdateController: ObservableObject {
@@ -8,6 +10,7 @@ final class UpdateController: ObservableObject {
     @Published var automaticallyChecks = false
     @Published var automaticallyInstalls = false
     @Published private(set) var allowsAutomaticInstall = false
+    #if canImport(Sparkle)
     private var controller: SPUStandardUpdaterController?
 
     init(enabled: Bool) {
@@ -27,4 +30,13 @@ final class UpdateController: ObservableObject {
     func check() { controller?.checkForUpdates(nil) }
     func setAutomaticInstalls(_ enabled: Bool) { controller?.updater.automaticallyDownloadsUpdates = enabled }
     func setAutomaticChecks(_ enabled: Bool) { controller?.updater.automaticallyChecksForUpdates = enabled }
+    #else
+    // Ad-hoc builds retain hardened runtime without loading third-party code.
+    // Production builds link Sparkle and sign all code with one Developer ID.
+    init(enabled: Bool) {}
+    var configured: Bool { false }
+    func check() {}
+    func setAutomaticInstalls(_ enabled: Bool) {}
+    func setAutomaticChecks(_ enabled: Bool) {}
+    #endif
 }

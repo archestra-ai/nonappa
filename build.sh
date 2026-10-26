@@ -9,14 +9,22 @@ VERSION=$(tr -d '\r\n' < "$ROOT/version.txt")
 IDENTITY=${CODE_SIGN_IDENTITY:--}
 ARCH=${TARGET_ARCH:-$(uname -m)}
 SIGN_ARGS=(--force --options runtime --sign "$IDENTITY")
-if [[ "$IDENTITY" != - ]]; then SIGN_ARGS+=(--timestamp); fi
+UPDATER_FLAGS=()
+if [[ "$IDENTITY" != - ]]; then
+  SIGN_ARGS+=(--timestamp)
+  UPDATER_FLAGS=(-F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
+fi
+# Check the production updater API even when building an ad-hoc developer binary.
+xcrun swiftc -typecheck -parse-as-library -target "$ARCH-apple-macosx13.0" \
+  "$ROOT/Sources/Core.swift" "$ROOT/Sources/HelperProtocol.swift" "$ROOT/Sources/HelperClient.swift" \
+  "$ROOT/Sources/Updates.swift" "$ROOT/Sources/App.swift" -F "$SPARKLE" -framework Sparkle
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers"
 xcrun swiftc -O -parse-as-library -target "$ARCH-apple-macosx13.0" \
   "$ROOT/Sources/Core.swift" "$ROOT/Sources/HelperProtocol.swift" "$ROOT/Sources/Helper.swift" -o "$APP/Contents/Helpers/NoNappaHelper"
 codesign "${SIGN_ARGS[@]}" "$APP/Contents/Helpers/NoNappaHelper"
 xcrun swiftc -O -parse-as-library -target "$ARCH-apple-macosx13.0" \
   "$ROOT/Sources/Core.swift" "$ROOT/Sources/HelperProtocol.swift" "$ROOT/Sources/HelperClient.swift" "$ROOT/Sources/Updates.swift" "$ROOT/Sources/App.swift" \
-  -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks -o "$APP/Contents/MacOS/NoNappa"
+  "${UPDATER_FLAGS[@]}" -o "$APP/Contents/MacOS/NoNappa"
 cp "$SPARKLE/LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE"
 cp "$ROOT/Resources/mark.json" "$ROOT/Resources/openappa.svg" "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -41,13 +49,18 @@ if [[ -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$APP/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://github.com/archestra-ai/nonappa/releases/latest/download/appcast.xml" "$APP/Contents/Info.plist"
 fi
-mkdir -p "$APP/Contents/Frameworks"
-ditto "$SPARKLE/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
-FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-for nested in "$FRAMEWORK/XPCServices/Downloader.xpc" "$FRAMEWORK/XPCServices/Installer.xpc" "$FRAMEWORK/Updater.app" "$FRAMEWORK/Autoupdate"; do
-  codesign "${SIGN_ARGS[@]}" --preserve-metadata=entitlements "$nested"
-done
-codesign "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+# Hardened ad-hoc binaries have no Team ID and cannot load third-party dylibs.
+# Keep library validation intact; only embed Sparkle in Developer ID builds.
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
+if [[ "$IDENTITY" != - ]]; then
+  mkdir -p "$APP/Contents/Frameworks"
+  ditto "$SPARKLE/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+  FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+  for nested in "$FRAMEWORK/XPCServices/Downloader.xpc" "$FRAMEWORK/XPCServices/Installer.xpc" "$FRAMEWORK/Updater.app" "$FRAMEWORK/Autoupdate"; do
+    codesign "${SIGN_ARGS[@]}" --preserve-metadata=entitlements "$nested"
+  done
+  codesign "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+fi
 codesign "${SIGN_ARGS[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
 printf 'Built %s\n' "$APP"

@@ -18,7 +18,8 @@ python3 scripts/make-appcast.py "$ARCHIVE" "$VERSION" "$SIGNATURE" "$FIXTURE/app
 ditto -x -k "$ARCHIVE" "$FIXTURE/unpacked"
 APP="$FIXTURE/unpacked/NoNappa.app"
 codesign --verify --deep --strict "$APP"
-for executable in MacOS/NoNappa Helpers/NoNappaHelper Frameworks/Sparkle.framework/Sparkle; do
+"$APP/Contents/MacOS/NoNappa" --check-runtime
+for executable in MacOS/NoNappa Helpers/NoNappaHelper; do
   lipo "$APP/Contents/$executable" -verify_arch arm64 x86_64
 done
 python3 - "$FIXTURE" "$VERSION" <<'PY'
@@ -62,4 +63,4 @@ if "$SIGNER" --verify --ed-key-file "$FIXTURE/private" "$FIXTURE/tampered.zip" "
   echo 'Tampered archive unexpectedly verified' >&2
   exit 1
 fi
-printf 'Passed: universal packaged app/helper/framework, embedded version and public key, appcast metadata, Sparkle signatures, malformed inputs, tampered-archive rejection.\n'
+printf 'Passed: runtime launch, universal packaged app/helper, embedded version and public key, appcast metadata, Sparkle signatures, malformed inputs, tampered-archive rejection.\n'

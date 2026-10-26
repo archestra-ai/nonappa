@@ -12,6 +12,5 @@ xcrun swiftc -parse-as-library -target "$(uname -m)-apple-macosx13.0" \
 xcrun swiftc -parse-as-library -D NONAPPA_MODEL_TESTS -target "$(uname -m)-apple-macosx13.0" \
   "$ROOT/Sources/Core.swift" "$ROOT/Sources/HelperProtocol.swift" "$ROOT/Sources/HelperClient.swift" \
   "$ROOT/Sources/Updates.swift" "$ROOT/Sources/App.swift" "$ROOT/Tests/ModelTests.swift" \
-  -F "$ROOT/build/dependencies/sparkle" -framework Sparkle \
-  -Xlinker -rpath -Xlinker "$ROOT/build/dependencies/sparkle" -o "$ROOT/build/model-tests"
+  -o "$ROOT/build/model-tests"
 "$ROOT/build/model-tests"
