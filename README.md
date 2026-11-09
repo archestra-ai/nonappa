@@ -6,6 +6,7 @@ A tiny native macOS menu bar app that keeps your Mac awake with the lid closed.
 - Timed sessions restore sleep even if the app quits or the Mac restarts.
 - Saved preferences, launch at login, and an OpenAPPA mascot in your menu bar.
 - One-time helper approval; no password prompts for everyday sleep controls.
+- Locks the screen when you close the lid during a session, so your agents and builds keep running behind the lock screen.
 
 ## Build and run
 
@@ -19,6 +20,8 @@ bash build.sh --install
 ```
 
 The app installs to `~/Applications/NoNappa.app`. Click its menu bar icon, choose **Set Up Sleep Controls…**, and approve the helper installation. Select a duration and choose **Keep Awake**. During a session, **Restore Sleep** is the primary action; the gear menu lets you change duration. Launch at login and Quit are in the gear menu and the menu-bar icon’s right-click menu. Launch at login is opt-in.
+
+With sleep disabled, macOS no longer locks the Mac when the lid closes. NoNappa locks it instead, the same way as Control-Command-Q. It skips the lock while an external display is connected, as macOS does. Turn this off with **Lock Screen When Lid Closes** in the gear menu.
 
 The root-owned helper accepts only predefined sleep commands from the approved user and exact app signature over XPC. It never stores your password. Rebuilding or updating the app may require approving the helper again. Keep the Mac ventilated while running with the lid closed; support depends on macOS and hardware behavior for `pmset disablesleep`.
 
