@@ -14,6 +14,21 @@ struct CoreTests {
         precondition(Preferences(defaults: UserDefaults(suiteName: suite)!).minutes == 0)
         defaults.set(-5, forKey: "durationMinutes")
         precondition(preferences.minutes == 60)
+        precondition(preferences.lockOnLidClose)
+        preferences.lockOnLidClose = false
+        precondition(!Preferences(defaults: UserDefaults(suiteName: suite)!).lockOnLidClose)
+
+        // Lock only when the lid goes from open to closed during a session, without an external display.
+        var policy = LidLockPolicy()
+        precondition(!policy.shouldLock(lidClosed: true, awake: true, enabled: true, externalDisplay: false))
+        precondition(!policy.shouldLock(lidClosed: false, awake: true, enabled: true, externalDisplay: false))
+        precondition(policy.shouldLock(lidClosed: true, awake: true, enabled: true, externalDisplay: false))
+        precondition(!policy.shouldLock(lidClosed: true, awake: true, enabled: true, externalDisplay: false))
+        for (awake, enabled, external) in [(false, true, false), (nil, true, false), (true, false, false), (true, true, true)] as [(Bool?, Bool, Bool)] {
+            var blocked = LidLockPolicy()
+            _ = blocked.shouldLock(lidClosed: false, awake: awake, enabled: enabled, externalDisplay: external)
+            precondition(!blocked.shouldLock(lidClosed: true, awake: awake, enabled: enabled, externalDisplay: external))
+        }
         precondition(tryValue { try SleepStatus(output: "System-wide power settings:\n SleepDisabled\t\t1\n sleep 0").disabled })
         precondition(!tryValue { try SleepStatus(output: " SleepDisabled 0").disabled })
         precondition(!tryValue { try SleepStatus(output: "System-wide power settings:\nCurrently in use:\n sleep 0").disabled })
@@ -77,7 +92,7 @@ struct CoreTests {
         compiler.arguments = ["-o", root.appendingPathComponent("compiled.scpt").path, script.path]
         try compiler.run(); compiler.waitUntilExit()
         precondition(compiler.terminationStatus == 0)
-        print("Passed: saved settings, status parsing, duration validation, timer persistence, independent restoration, failure rollback, stop, authorization script compilation.")
+        print("Passed: saved settings, lid lock policy, status parsing, duration validation, timer persistence, independent restoration, failure rollback, stop, authorization script compilation.")
     }
 
     private static func tryValue<T>(_ action: () throws -> T) -> T { try! action() }

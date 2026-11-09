@@ -20,6 +20,23 @@ struct Preferences {
         get { defaults.bool(forKey: "didConfigureLogin") }
         nonmutating set { defaults.set(newValue, forKey: "didConfigureLogin") }
     }
+
+    var lockOnLidClose: Bool {
+        get { defaults.object(forKey: "lockOnLidClose") as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: "lockOnLidClose") }
+    }
+}
+
+// With sleep disabled, closing the lid neither sleeps the Mac nor locks it, so NoNappa
+// locks on the open-to-closed transition itself. Processes keep running behind the lock.
+struct LidLockPolicy {
+    private var lidWasClosed: Bool?
+
+    mutating func shouldLock(lidClosed: Bool, awake: Bool?, enabled: Bool, externalDisplay: Bool) -> Bool {
+        defer { lidWasClosed = lidClosed }
+        // An external display means clamshell desk use, which macOS doesn't lock either.
+        return lidWasClosed == false && lidClosed && awake == true && enabled && !externalDisplay
+    }
 }
 
 struct SleepStatus {

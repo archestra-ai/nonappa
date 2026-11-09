@@ -54,6 +54,20 @@ struct ModelTests {
         guarded.helperReady = true; guarded.busy = true
         await guarded.change(minutes: 60)
         precondition(calls == 0)
-        print("Passed: UI model timed/indefinite/stop transitions, restart persistence, cancellation, error recovery, setup and busy guards; no OS mutations.")
+
+        // Closing the lid during a session locks once; turning the setting off persists and stops it.
+        var locks = 0
+        let lid = SleepModel(previewState: "normal", preferences: preferences, backend: fixture.backend, lockScreen: { locks += 1 })
+        await lid.change(minutes: 0)
+        lid.lidChanged(closed: false, externalDisplay: false)
+        lid.lidChanged(closed: true, externalDisplay: false)
+        lid.lidChanged(closed: true, externalDisplay: false)
+        precondition(locks == 1)
+        lid.lidChanged(closed: false, externalDisplay: false)
+        lid.lockOnLidClose = false
+        lid.lidChanged(closed: true, externalDisplay: false)
+        precondition(locks == 1 && !preferences.lockOnLidClose)
+        await lid.change(minutes: -1)
+        print("Passed: UI model timed/indefinite/stop transitions, restart persistence, cancellation, error recovery, setup and busy guards, lid lock; no OS mutations.")
     }
 }

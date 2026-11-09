@@ -1,4 +1,5 @@
 import AppKit
+import IOKit
 import SwiftUI
 import ServiceManagement
 
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }())
     private var previewWindow: NSWindow?
     private var timer: Timer?
+    private var lidMonitor: LidMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -37,8 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = NSHostingController(rootView: Panel(model: model))
         model.onChange = { [weak self] in self?.updateStatus() }
         model.refresh()
+        if !model.isPreview {
+            lidMonitor = LidMonitor { [weak self] in self?.checkLid() }
+            checkLid()
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.model.refresh() }
+            // The poll backs up the lid notification in case a macOS release stops sending it.
+            Task { @MainActor in self?.model.refresh(); self?.checkLid() }
         }
         updateStatus()
         if model.isPreview {
@@ -120,6 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.title = ""
         item.button?.toolTip = "NoNappa — \(model.statusTitle)"
     }
+
+    private func checkLid() {
+        guard !model.isPreview, let closed = LidMonitor.lidClosed else { return }
+        model.lidChanged(closed: closed, externalDisplay: Displays.externalConnected)
+    }
 }
 
 // Keep OS mutations at one boundary; previews and model tests use in-memory fixtures.
@@ -169,16 +181,24 @@ final class SleepModel: ObservableObject {
     @Published var minutes: Int {
         didSet { preferences.minutes = minutes }
     }
+    @Published var lockOnLidClose: Bool {
+        didSet { preferences.lockOnLidClose = lockOnLidClose }
+    }
     let isPreview: Bool
     private let backend: SleepBackend
     private let preferences: Preferences
+    private let lockScreen: () -> Void
+    private var lidPolicy = LidLockPolicy()
     private var statusReadError: String?
 
-    init(previewState: String? = nil, preferences: Preferences? = nil, backend: SleepBackend? = nil) {
+    init(previewState: String? = nil, preferences: Preferences? = nil, backend: SleepBackend? = nil,
+         lockScreen: (() -> Void)? = nil) {
         isPreview = previewState != nil
         self.backend = backend ?? previewState.map { PreviewSleepBackend(state: $0).backend } ?? .live
         self.preferences = preferences ?? (previewState == nil ? Preferences() : Preferences(defaults: UserDefaults(suiteName: "nonappa-ui-preview")!))
+        self.lockScreen = lockScreen ?? (previewState == nil ? ScreenLock.lock : {})
         minutes = self.preferences.minutes
+        lockOnLidClose = self.preferences.lockOnLidClose
         if let state = previewState {
             disabled = state == "error" ? nil : ["awake", "timed", "busy"].contains(state)
             deadline = state == "timed" ? Date().addingTimeInterval(3600) : nil
@@ -208,6 +228,12 @@ final class SleepModel: ObservableObject {
     }
 
     func refresh() { Task { await readStatus() } }
+
+    func lidChanged(closed: Bool, externalDisplay: Bool) {
+        if lidPolicy.shouldLock(lidClosed: closed, awake: disabled, enabled: lockOnLidClose, externalDisplay: externalDisplay) {
+            lockScreen()
+        }
+    }
 
     func readStatus() async {
         guard !refreshing, !busy else { return }
@@ -329,6 +355,7 @@ struct Panel: View {
                 Spacer()
                 Menu {
                     Toggle("Launch at Login", isOn: Binding(get: { model.loginEnabled }, set: { model.setLogin($0) }))
+                    Toggle("Lock Screen When Lid Closes", isOn: $model.lockOnLidClose)
                     if model.loginNeedsApproval {
                         Button("Approve Login Item…") { if !model.isPreview { SMAppService.openSystemSettingsLoginItems() } }
                     }
@@ -417,6 +444,64 @@ struct Panel: View {
     private func durationTitle(_ minutes: Int) -> String {
         if minutes == 0 { return "Until I stop" }
         return minutes < 60 ? "\(minutes) minutes" : minutes == 60 ? "1 hour" : "\(minutes / 60) hours"
+    }
+}
+
+// Reads the clamshell sensor and reports each change IOKit posts on the power-management root domain.
+final class LidMonitor {
+    private let onChange: @MainActor () -> Void
+    private var port: IONotificationPortRef?
+    private var notification: io_object_t = 0
+
+    init(onChange: @escaping @MainActor () -> Void) {
+        self.onChange = onChange
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return }
+        defer { IOObjectRelease(root) }
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        self.port = port
+        IONotificationPortSetDispatchQueue(port, .main)
+        IOServiceAddInterestNotification(port, root, kIOGeneralInterest, { refcon, _, messageType, _ in
+            // kIOPMMessageClamshellStateChange; the callback runs on the main queue set above.
+            guard messageType == 0xE003_4100, let refcon else { return }
+            let monitor = Unmanaged<LidMonitor>.fromOpaque(refcon).takeUnretainedValue()
+            MainActor.assumeIsolated { monitor.onChange() }
+        }, Unmanaged.passUnretained(self).toOpaque(), &notification)
+    }
+
+    deinit {
+        if notification != 0 { IOObjectRelease(notification) }
+        if let port { IONotificationPortDestroy(port) }
+    }
+
+    static var lidClosed: Bool? {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return nil }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? Bool
+    }
+}
+
+enum Displays {
+    static var externalConnected: Bool {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return false }
+        return ids.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
+    }
+}
+
+enum ScreenLock {
+    // The same call as Control-Command-Q. It locks regardless of the screen-lock delay setting.
+    static func lock() {
+        typealias Lock = @convention(c) () -> Int32
+        if let handle = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_LAZY),
+           let symbol = dlsym(handle, "SACLockScreenImmediate"),
+           unsafeBitCast(symbol, to: Lock.self)() == 0 { return }
+        // Public fallback: sleeping the display locks when a password is required immediately.
+        Task { _ = try? await SleepModel.run("/usr/bin/pmset", ["displaysleepnow"]) }
     }
 }
 
